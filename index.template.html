@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>expense tracker — offline</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-monospace, monospace;
+    background: #101418; color: #d7dde3;
+    margin: 0; padding: 18px;
+    display: flex; flex-direction: column; gap: 14px;
+    max-width: 720px; margin: 0 auto;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  .controls, .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select {
+    font: inherit; background: #1b2129; color: #d7dde3;
+    border: 1px solid #2c343c; padding: 6px 8px;
+  }
+  button {
+    font: inherit; background: #1b2129; color: #d7dde3;
+    border: 1px solid #2c343c; padding: 6px 12px; cursor: pointer;
+  }
+  #chart { display: flex; flex-direction: column; gap: 6px; }
+  .bar-row { display: flex; gap: 8px; align-items: center; }
+  .bar-label { width: 90px; }
+  .bar { flex: 1; background: #1b2129; }
+  .bar-fill { height: 16px; background: #4d9de0; }
+  .bar-value { width: 60px; text-align: right; }
+  #list .row {
+    display: flex; gap: 8px; padding: 6px 0;
+    border-bottom: 1px solid #1b2129;
+  }
+  #list .row span:first-child { width: 90px; }
+  #list .row span:nth-child(2) { width: 90px; color: #4d9de0; }
+  #list .row span:nth-child(3) { flex: 1; }
+  #summary { color: #ffd166; }
+  #form-status, #import-status { color: #7fdc9c; min-height: 16px; }
+  .del { border: none; color: #c62828; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>expense tracker <small>(offline — data stays on this device)</small></h1>
+  <div class="controls">
+    <input id="amount" type="number" placeholder="amount" step="0.01">
+    <select id="category"></select>
+    <input id="description" placeholder="description">
+    <input id="date" type="date">
+    <button id="add">add</button>
+    <span id="form-status"></span>
+  </div>
+  <div class="toolbar">
+    <label>month <select id="month"></select></label>
+    <button id="export">export CSV</button>
+    <button id="import">import CSV</button>
+    <span id="import-status"></span>
+  </div>
+  <div id="summary"></div>
+  <div id="chart"></div>
+  <div id="list"></div>
+<script type="module">
+/*__APP__*/
+</script>
+</body>
+</html>

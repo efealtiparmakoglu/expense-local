@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>expense tracker — offline</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-monospace, monospace;
+    background: #101418; color: #d7dde3;
+    margin: 0; padding: 18px;
+    display: flex; flex-direction: column; gap: 14px;
+    max-width: 720px; margin: 0 auto;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  .controls, .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select {
+    font: inherit; background: #1b2129; color: #d7dde3;
+    border: 1px solid #2c343c; padding: 6px 8px;
+  }
+  button {
+    font: inherit; background: #1b2129; color: #d7dde3;
+    border: 1px solid #2c343c; padding: 6px 12px; cursor: pointer;
+  }
+  #chart { display: flex; flex-direction: column; gap: 6px; }
+  .bar-row { display: flex; gap: 8px; align-items: center; }
+  .bar-label { width: 90px; }
+  .bar { flex: 1; background: #1b2129; }
+  .bar-fill { height: 16px; background: #4d9de0; }
+  .bar-value { width: 60px; text-align: right; }
+  #list .row {
+    display: flex; gap: 8px; padding: 6px 0;
+    border-bottom: 1px solid #1b2129;
+  }
+  #list .row span:first-child { width: 90px; }
+  #list .row span:nth-child(2) { width: 90px; color: #4d9de0; }
+  #list .row span:nth-child(3) { flex: 1; }
+  #summary { color: #ffd166; }
+  #form-status, #import-status { color: #7fdc9c; min-height: 16px; }
+  .del { border: none; color: #c62828; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>expense tracker <small>(offline — data stays on this device)</small></h1>
+  <div class="controls">
+    <input id="amount" type="number" placeholder="amount" step="0.01">
+    <select id="category"></select>
+    <input id="description" placeholder="description">
+    <input id="date" type="date">
+    <button id="add">add</button>
+    <span id="form-status"></span>
+  </div>
+  <div class="toolbar">
+    <label>month <select id="month"></select></label>
+    <button id="export">export CSV</button>
+    <button id="import">import CSV</button>
+    <span id="import-status"></span>
+  </div>
+  <div id="summary"></div>
+  <div id="chart"></div>
+  <div id="list"></div>
+<script type="module">
+// core.ts (inlined)
+/* Pure expense logic: records, categories, monthly aggregation, CSV
+ * parse/export. No DOM, no storage. */
+
+                          
+             
+                 
+                   
+                      
+                             
+               
+ 
+
+export const DEFAULT_CATEGORIES = [
+  "food", "transport", "housing", "fun", "health", "other",
+]         ;
+
+export function newId(now         = Date.now())         {
+  return now.toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+}
+
+/** Parse "YYYY-MM-DD" or reject. */
+export function parseDate(text        )                {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const [y, m, d] = text.split("-").map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return text;
+}
+
+export function createExpense(
+  amount        ,
+  category        ,
+  description        ,
+  date        ,
+  now         = Date.now(),
+)          {
+  return { id: newId(now), amount, category, description, date };
+}
+
+/** "2026-09" from an ISO date. */
+export function monthOf(date        )         {
+  return date.slice(0, 7);
+}
+
+                              
+                
+                
+                                     
+ 
+
+/** Group expenses by month, totals + per-category sums. */
+export function monthlyBuckets(expenses           )                {
+  const map = new Map                     ();
+  for (const expense of expenses) {
+    const month = monthOf(expense.date);
+    let bucket = map.get(month);
+    if (!bucket) {
+      bucket = { month, total: 0, byCategory: {} };
+      map.set(month, bucket);
+    }
+    bucket.total += expense.amount;
+    bucket.byCategory[expense.category] =
+      (bucket.byCategory[expense.category] ?? 0) + expense.amount;
+  }
+  return [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
+
+/** Filter to one month. */
+export function filterMonth(expenses           , month        )            {
+  return expenses.filter((expense) => monthOf(expense.date) === month);
+}
+
+/** Top spending categories in a month, descending. */
+export function topCategories(expenses           , month        )                                             {
+  const bucket = monthlyBuckets(expenses).find((b) => b.month === month);
+  if (!bucket) return [];
+  return Object.entries(bucket.byCategory)
+    .map(([category, total]) => ({ category, total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+/** Export as CSV: id,amount,category,description,date */
+export function toCsv(expenses           )         {
+  const escape = (value        )         =>
+    /[",\n]/.test(value) ? '"' + value.replaceAll('"', '""') + '"' : value;
+  const lines = ["id,amount,category,description,date"];
+  for (const e of expenses) {
+    lines.push(
+      [e.id, String(e.amount), escape(e.category), escape(e.description), e.date].join(","),
+    );
+  }
+  return lines.join("\n");
+}
+
+/** Parse a CSV in the same format; skips the header and bad rows. */
+export function fromCsv(text        )                                           {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length === 0) return { expenses: [], skipped: 0 };
+  const expenses            = [];
+  let skipped = 0;
+  for (const line of lines.slice(1)) {
+    const parts = line.split(",");
+    if (parts.length < 5) {
+      skipped++;
+      continue;
+    }
+    const [id, amount, category, description, date] = parts;
+    const parsedAmount = Number(amount);
+    if (!parseDate(date ?? "") || Number.isNaN(parsedAmount)) {
+      skipped++;
+      continue;
+    }
+    expenses.push({
+      id: id          ,
+      amount: parsedAmount,
+      category: category ?? "other",
+      description: description ?? "",
+      date: date          ,
+    });
+  }
+  return { expenses, skipped };
+}
+
+/** Dedupe-merge imports by id, newest updated wins. */
+export function mergeExpenses(existing           , incoming           )                                                             {
+  const byId = new Map                 ();
+  for (const e of existing) byId.set(e.id, e);
+  let added = 0;
+  let updatedCount = 0;
+  for (const e of incoming) {
+    if (!byId.has(e.id)) {
+      added++;
+      byId.set(e.id, e);
+    } else {
+      updatedCount++;
+      byId.set(e.id, e);
+    }
+  }
+  return { merged: [...byId.values()], added, updatedCount };
+}
+
+/* DOM layer: expense form, list, month selector, bar chart, CSV
+ * import/export. IndexedDB storage via a copy of the store pattern. */
+
+
+const $ = (id        )              => document.getElementById(id)               ;
+
+const DB_NAME = "expense-local";
+let db                     = null;
+let expenses            = [];
+let viewMonth = monthOf(new Date().toISOString().slice(0, 10));
+
+function openDb()                       {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains("expenses")) {
+        database.createObjectStore("expenses", { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("idb failed"));
+  });
+}
+
+async function persistAll()                {
+  if (!db) return;
+  const tx = db.transaction("expenses", "readwrite");
+  const store = tx.objectStore("expenses");
+  store.clear();
+  for (const expense of expenses) store.put(expense);
+}
+
+async function reload()                {
+  expenses = await new Promise((resolve, reject) => {
+    const tx = db .transaction("expenses", "readonly");
+    const request = tx.objectStore("expenses").getAll();
+    request.onsuccess = () => resolve(request.result             );
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function monthOptions()       {
+  const select = $("month")                     ;
+  const months = [...new Set(expenses.map((e) => monthOf(e.date)))].sort().reverse();
+  if (!months.includes(viewMonth)) viewMonth = months[0] ?? viewMonth;
+  select.innerHTML = months.map((m) => `<option value="${m}">${m}</option>`).join("");
+  select.value = viewMonth;
+}
+
+function renderChart()       {
+  const chart = $("chart")               ;
+  const top = topCategories(expenses, viewMonth);
+  const max = Math.max(...top.map((t) => t.total), 1);
+  chart.innerHTML = top
+    .map(
+      (t) =>
+        `<div class="bar-row"><span class="bar-label">${t.category}</span>` +
+        `<div class="bar"><div class="bar-fill" style="width:${Math.round((t.total / max) * 100)}%"></div></div>` +
+        `<span class="bar-value">${t.total.toFixed(0)}</span></div>`,
+    )
+    .join("");
+}
+
+function renderList()       {
+  const listEl = $("list")               ;
+  const monthExpenses = filterMonth(expenses, viewMonth).sort((a, b) => b.date.localeCompare(a.date));
+  listEl.innerHTML = monthExpenses
+    .map(
+      (e) =>
+        `<div class="row"><span>${e.date}</span><span>${e.category}</span>` +
+        `<span>${e.description}</span><strong>${e.amount.toFixed(2)}</strong>` +
+        `<button data-id="${e.id}" class="del">✕</button></div>`,
+    )
+    .join("");
+  listEl.querySelectorAll                   (".del").forEach((button) => {
+    button.addEventListener("click", async () => {
+      expenses = expenses.filter((e) => e.id !== button.dataset.id);
+      await persistAll();
+      repaint();
+    });
+  });
+}
+
+function repaint()       {
+  monthOptions();
+  renderChart();
+  renderList();
+  const monthExpenses = filterMonth(expenses, viewMonth);
+  const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  $("summary").textContent = `${viewMonth}: ${monthExpenses.length} expense(s), total ${total.toFixed(2)}`;
+}
+
+async function addExpense()                {
+  const amount = Number(($("amount")                    ).value);
+  const category = ($("category")                     ).value;
+  const description = ($("description")                    ).value;
+  const date = ($("date")                    ).value;
+  if (Number.isNaN(amount) || amount <= 0 || !date) {
+    $("form-status").textContent = "amount and date are required";
+    return;
+  }
+  expenses.push(createExpense(amount, category, description, date));
+  await persistAll();
+  ($("amount")                    ).value = "";
+  ($("description")                    ).value = "";
+  $("form-status").textContent = "";
+  repaint();
+}
+
+function exportCsv()       {
+  const blob = new Blob([toCsv(expenses)], { type: "text/csv" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "expenses.csv";
+  link.click();
+}
+
+function importCsv()       {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".csv,text/csv";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const { expenses: incoming, skipped } = fromCsv(text);
+    const { merged, added } = mergeExpenses(expenses, incoming);
+    expenses = merged;
+    await persistAll();
+    $("import-status").textContent = `imported ${added}, skipped ${skipped}`;
+    repaint();
+  });
+  input.click();
+}
+
+async function setup()                {
+  db = await openDb();
+  await reload();
+  viewMonth = monthOf(new Date().toISOString().slice(0, 10));
+
+  const categorySelect = $("category")                     ;
+  categorySelect.innerHTML = DEFAULT_CATEGORIES.map(
+    (category) => `<option value="${category}">${category}</option>`,
+  ).join("");
+  ($("date")                    ).value = new Date().toISOString().slice(0, 10);
+  $("add").addEventListener("click", addExpense);
+  $("export").addEventListener("click", exportCsv);
+  $("import").addEventListener("click", importCsv);
+  $("month").addEventListener("change", (event) => {
+    viewMonth = (event.target                     ).value;
+    repaint();
+  });
+  repaint();
+}
+
+setup();
+
+</script>
+</body>
+</html>

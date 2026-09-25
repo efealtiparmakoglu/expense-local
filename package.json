@@ -1,0 +1,12 @@
+{
+  "name": "expense-local",
+  "version": "1.0.0",
+  "description": "Local-first expense tracker: IndexedDB storage, categories, monthly bar charts, CSV import/export — single-file offline HTML",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "test": "node --test tests/",
+    "build": "node build.ts"
+  }
+}
